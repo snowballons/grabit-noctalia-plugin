@@ -9,8 +9,38 @@ noctalia.setUpdateInterval(500)
 local CHECK_TICKS = 4 -- 4 * 500ms = 2s between process checks
 local PENDING_TICKS = 4 -- 4 * 500ms = 2s wait for recording to start
 
--- grabit writes the recording PID here (XDG_RUNTIME_DIR / grabit_recording.pid)
-local GRABIT_PID_FILE = (os.getenv("XDG_RUNTIME_DIR") or ("/run/user/" .. (os.getenv("UID") or "1000"))) .. "/grabit_recording.pid"
+local function log(msg)
+    noctalia.log(`grabit: {msg}`)
+end
+
+-- grabit writes the recording PID here (XDG_RUNTIME_DIR / grabit_recording.pid).
+-- XDG_RUNTIME_DIR is mandatory in every Wayland session (set by the session
+-- manager before any user process starts), so os.getenv should always succeed.
+-- The fallback reads the real UID from /proc/self/loginuid rather than using
+-- os.getenv("UID"), which is a bash shell variable and is never exported.
+local function resolveRuntimeDir()
+    local xdg = os.getenv("XDG_RUNTIME_DIR")
+    if xdg and xdg ~= "" then return xdg end
+
+    -- Fallback: derive from the real UID via /proc/self/loginuid
+    local ok, uid = pcall(function()
+        return noctalia.readFile("/proc/self/loginuid")
+    end)
+    if ok and uid then
+        uid = uid:match("^%s*(%d+)%s*$")
+        if uid and tonumber(uid) ~= 4294967295 then -- 0xFFFFFFFF = unset loginuid
+            return "/run/user/" .. uid
+        end
+    end
+
+    -- Last resort: log and return nil so callers skip PID-file tracking
+    log("cannot determine XDG_RUNTIME_DIR; PID tracking disabled")
+    return nil
+end
+local GRABIT_PID_FILE = (function()
+    local dir = resolveRuntimeDir()
+    return dir and (dir .. "/grabit_recording.pid") or nil
+end)()
 
 local state = "idle" -- idle | pending | recording | paused
 local recordingSince = 0
@@ -26,10 +56,6 @@ local ownedPid = nil
 
 local function cfg(key)
     return noctalia.getConfig(key)
-end
-
-local function log(msg)
-    noctalia.log(`grabit: {msg}`)
 end
 
 -- ── Status publication ───────────────────────────────────────────
@@ -145,8 +171,10 @@ end
 -- ── Process detection ────────────────────────────────────────────
 
 -- Read the PID from grabit's lockfile (written at recording start).
--- Returns the PID as a number, or nil if the file is absent/unreadable.
+-- Returns the PID as a number, or nil if the path is unknown, the file is
+-- absent, or it contains something other than a bare integer.
 local function readGrabitPidFile()
+    if not GRABIT_PID_FILE then return nil end
     local ok, result = pcall(function()
         return noctalia.readFile(GRABIT_PID_FILE)
     end)
@@ -238,8 +266,11 @@ local function stopRecording()
     if state == "idle" then return end
 
     log("stopping recording (toggle)")
-    -- grabit --record is a toggle: a second invocation stops the running session.
-    -- Use argv form to avoid shell parsing.
+    -- grabit --record is a toggle that works by pid file: it reads
+    -- $XDG_RUNTIME_DIR/grabit_recording.pid, signals the process to stop, and
+    -- removes the file.  This is true whether the recording is active or paused
+    -- (the pid file exists in both cases), so there is no need to send --pause
+    -- first to resume before stopping.
     noctalia.runAsync({ "grabit", "--record" })
     ownedPid = nil
     recordingSince = 0
