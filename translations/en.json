@@ -7,7 +7,7 @@
   "settings.upload_service.label": "Upload service",
   "settings.upload_service.description": "grabit upload target: zipline, nest, or a ShareX .sxcu uploader name",
   "settings.show_cursor.label": "Include mouse cursor",
-  "settings.show_cursor.description": "Include the mouse pointer in captures",
+  "settings.show_cursor.description": "Include the mouse pointer in captures and recordings (writes both capture.cursor and recording.cursor)",
   "settings.hide_inactive.label": "Hide widget when idle",
   "settings.hide_inactive.description": "Hide the bar widget when no capture or recording is active"
 }

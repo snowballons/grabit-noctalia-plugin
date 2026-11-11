@@ -72,16 +72,19 @@ function renderSettings()
             end,
         }),
 
-        -- Show cursor
+        -- Cursor visibility: applies to both screenshots and recordings.
+        -- grabit tracks these as two separate config keys; both are written here.
         ui.row({ gap = 8, align = "center" }, {
             ui.toggle({
                 checked = settings.showCursor,
                 onChange = function(value)
                     settings.showCursor = value == "true"
-                    grabitSet("capture.cursor", tostring(settings.showCursor))
+                    local v = tostring(settings.showCursor)
+                    grabitSet("capture.cursor", v)
+                    grabitSet("recording.cursor", v)
                 end,
             }),
-            ui.label({ text = "Include mouse cursor in captures" }),
+            ui.label({ text = "Include mouse cursor in captures and recordings" }),
         }),
 
         ui.separator({}),
@@ -108,6 +111,7 @@ function renderSettings()
                 local keysToReset = {
                     "default_action",
                     "capture.cursor",
+                    "recording.cursor",
                     "service",
                 }
                 for _, key in ipairs(keysToReset) do
