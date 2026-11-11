@@ -154,13 +154,10 @@ local function startRecording(delayMs)
         local cmd = buildRecordCommand()
         log(`spawning: {cmd}`)
 
-        local ok = noctalia.runAsync(cmd, function(result)
-            log(`grabit --record exited with code {result.exitCode or "?"}`)
-            recordingSince = 0
-            if state ~= "idle" then
-                setState("idle")
-            end
-        end)
+        -- Detached form (no callback): the callback form has a default 5s
+        -- timeout and Noctalia kills the process group when it fires, which
+        -- cut recordings short. update() detects the process instead.
+        local ok = noctalia.runAsync(cmd)
 
         if not ok then
             log("failed to spawn grabit --record")
@@ -201,13 +198,9 @@ local function spawnCapture(mode, delayMs)
         local cmd = buildCaptureCommand(mode)
         log(`spawning: {cmd}`)
 
-        local ok = noctalia.runAsync(cmd, function(result)
-            local code = result.exitCode or "?"
-            log(`grabit exited with code {code}`)
-            if code ~= 0 and result.stderr and result.stderr ~= "" then
-                log(`stderr: {result.stderr}`)
-            end
-        end)
+        -- Detached form (no callback): a region select can stay open longer
+        -- than the callback form's default 5s timeout, which would kill it.
+        local ok = noctalia.runAsync(cmd)
 
         if not ok then
             log("failed to spawn grabit")
