@@ -98,7 +98,7 @@ function renderSettings()
 
         ui.button({
             text = "Reset grabit config",
-            glyph = "refresh-ccw",
+            glyph = "refresh",
             variant = "destructive",
             onClick = function()
                 -- grabit set --reset only resets individual keys; there is no

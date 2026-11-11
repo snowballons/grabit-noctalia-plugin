@@ -33,7 +33,7 @@ local function render()
             align = "center",
             gap = 8,
         }, {
-            ui.glyph({ name = "record-filled", size = 12, color = RED }),
+            ui.glyph({ name = "player-record-filled", size = 12, color = RED }),
             ui.label({
                 text = "Recording" .. elapsed,
                 color = "on_surface",

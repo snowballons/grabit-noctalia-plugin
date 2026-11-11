@@ -53,7 +53,7 @@ local function applyStatus(status)
         barWidget.setVisible(true)
 
     elseif state == "paused" then
-        barWidget.setGlyph("video-pause-filled")
+        barWidget.setGlyph("player-pause-filled")
         barWidget.setGlyphColor("warning")
         barWidget.setColor("warning")
         barWidget.setTooltip({

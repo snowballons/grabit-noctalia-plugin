@@ -34,7 +34,19 @@ end
 
 -- ── Status publication ───────────────────────────────────────────
 
+-- Track last-published values so we can skip redundant state.set calls.
+-- publishStatus() fires every 500ms unconditionally from update(); without this
+-- guard it wakes every watcher (widget, recording_layer) 2×/s even when idle.
+local lastPublished = { state = "", available = false, recordingSince = -1 }
+
 local function publishStatus()
+    if lastPublished.state == state
+        and lastPublished.available == isAvailable
+        and lastPublished.recordingSince == recordingSince
+    then
+        return
+    end
+    lastPublished = { state = state, available = isAvailable, recordingSince = recordingSince }
     noctalia.state.set("status", {
         state = state,
         available = isAvailable,

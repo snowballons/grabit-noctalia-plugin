@@ -26,12 +26,22 @@ if ! noctalia msg plugins list 2>&1 | grep -q "$PLUGIN.*enabled"; then
 fi
 pass "Plugin is enabled"
 
-# Test service IPC - start
-log "Testing service:start..."
-if noctalia msg plugin "$PLUGIN:service" all start 2>&1 | grep -q "ok: dispatched"; then
-    pass "service:start dispatched"
+# Test service IPC - record then stop (round-trip exercises real state transitions)
+# "start" is not a valid IPC event; "record" → "stop" is the real path.
+log "Testing service:record..."
+if noctalia msg plugin "$PLUGIN:service" all record 2>&1 | grep -q "ok: dispatched"; then
+    pass "service:record dispatched"
 else
-    fail "service:start failed"
+    fail "service:record failed"
+fi
+
+sleep 0.6  # allow the pending state to settle before stopping
+
+log "Testing service:stop..."
+if noctalia msg plugin "$PLUGIN:service" all stop 2>&1 | grep -q "ok: dispatched"; then
+    pass "service:stop dispatched"
+else
+    fail "service:stop failed"
 fi
 
 # Test service IPC - capture
