@@ -3,11 +3,42 @@
 
 local settings = {}
 
+local CAPTURE_FORMATS = { "png", "jpeg", "webp" }
+local FILENAME_PRESETS = { "date", "random", "uuid", "timestamp" }
+local RECORDING_FORMATS = { "mp4", "webm", "gif" }
+
+-- grabit keys read back when the panel opens. `grabit set <key>` prints the
+-- current value plus its default without writing anything.
+local CONFIG_KEYS = {
+    "also_save",
+    "format",
+    "filename",
+    "filename_preset",
+    "recording.fps",
+    "recording.format",
+    "recording.crf",
+    "translate.target",
+}
+
 local function indexOf(arr, value)
     for i, v in ipairs(arr) do
         if v == value then return i - 1 end
     end
     return 0
+end
+
+local function trim(s)
+    return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function nonEmpty(value, fallback)
+    if type(value) == "string" and value ~= "" then return value end
+    return fallback
+end
+
+local function isIntegerInRange(value, min, max)
+    local n = tonumber(value)
+    return n ~= nil and n >= min and n <= max and math.floor(n) == n
 end
 
 -- Write a grabit config value via CLI (argv form avoids shell parsing of values)
@@ -19,26 +50,105 @@ local function grabitSet(key, value)
     end)
 end
 
+local function grabitUnset(key)
+    noctalia.runAsync({ "grabit", "unset", key }, function(res)
+        if res.exitCode ~= 0 then
+            noctalia.notifyError("Grabit", "Failed to unset config: " .. (res.stderr or "unknown error"))
+        end
+    end)
+end
+
+-- `grabit set <key>` output looks like:
+--   format = png|jpeg|webp
+--   default: png
+--   current: (unset)
+local function parseConfigInfo(out)
+    local current = trim((out or ""):match("current:%s*([^\n]*)") or "")
+    if current == "" or current == "(unset)" then
+        current = trim((out or ""):match("default:%s*([^\n]*)") or "")
+    end
+    return current
+end
+
+local function readGrabitConfig(keys, onDone)
+    local remaining = #keys
+    local values = {}
+    if remaining == 0 then
+        onDone(values)
+        return
+    end
+
+    local function settle(key, value)
+        values[key] = value
+        remaining = remaining - 1
+        if remaining == 0 then onDone(values) end
+    end
+
+    for _, key in ipairs(keys) do
+        local ok = noctalia.runAsync({ "grabit", "set", key }, function(res)
+            settle(key, parseConfigInfo(res and res.stdout))
+        end)
+        if not ok then settle(key, "") end
+    end
+end
+
+-- ── State loading ────────────────────────────────────────────────
+
+-- Bumped on every onOpen so a slow config read cannot overwrite the panel
+-- after it has been reopened.
+local loadGeneration = 0
+
 function onOpen()
     settings.defaultAction = noctalia.getConfig("default_action") or "copy"
     settings.uploadService = noctalia.getConfig("upload_service") or ""
     settings.showCursor = noctalia.getConfig("show_cursor")
     if settings.showCursor == nil then settings.showCursor = true end
 
+    -- grabit-side values; replaced by the real values once the reads land.
+    settings.alsoSave = false
+    settings.format = "png"
+    settings.filenamePreset = "date"
+    settings.filename = ""
+    settings.recordingFps = "30"
+    settings.recordingFormat = "mp4"
+    settings.recordingCrf = "23"
+    settings.translateTarget = "en"
+
+    loadGeneration = loadGeneration + 1
+    local generation = loadGeneration
+
     renderSettings()
+
+    readGrabitConfig(CONFIG_KEYS, function(values)
+        if generation ~= loadGeneration then return end
+        settings.alsoSave = values["also_save"] == "true"
+        settings.format = nonEmpty(values["format"], "png")
+        if settings.format == "jpg" then settings.format = "jpeg" end
+        settings.filenamePreset = nonEmpty(values["filename_preset"], "date")
+        settings.filename = values["filename"] or ""
+        settings.recordingFps = nonEmpty(values["recording.fps"], "30")
+        settings.recordingFormat = nonEmpty(values["recording.format"], "mp4")
+        settings.recordingCrf = nonEmpty(values["recording.crf"], "23")
+        settings.translateTarget = nonEmpty(values["translate.target"], "en")
+        renderSettings()
+    end)
 end
 
+-- ── UI ───────────────────────────────────────────────────────────
+
 function renderSettings()
-    panel.render(ui.column({
+    -- The panel is content-sized up to max_height; a fixed-height scroll keeps
+    -- the lower sections reachable once the content no longer fits.
+    panel.render(ui.scroll({
         padding = 16,
         gap = 12,
         width = 420,
+        height = 600,
     }, {
         ui.label({
             text = "Grabit Settings",
             fontWeight = "bold",
             fontSize = 16,
-            padding = { bottom = 4 },
         }),
         ui.label({
             text = "Configure grabit behavior. Changes are applied immediately.",
@@ -89,6 +199,116 @@ function renderSettings()
 
         ui.separator({}),
 
+        -- Capture output
+        ui.label({ text = "Capture output", fontWeight = "bold" }),
+
+        ui.row({ gap = 8, align = "center" }, {
+            ui.toggle({
+                checked = settings.alsoSave,
+                onChange = function(value)
+                    settings.alsoSave = value == "true"
+                    grabitSet("also_save", tostring(settings.alsoSave))
+                end,
+            }),
+            ui.label({ text = "Also save a copy to disk" }),
+        }),
+
+        ui.label({ text = "Image format" }),
+        ui.select({
+            options = { "PNG", "JPEG", "WebP" },
+            selectedIndex = indexOf(CAPTURE_FORMATS, settings.format),
+            onChange = function(idx)
+                local value = CAPTURE_FORMATS[idx + 1]
+                settings.format = value
+                grabitSet("format", value)
+            end,
+        }),
+
+        ui.label({ text = "Filename preset" }),
+        ui.select({
+            options = { "Date and time", "Random", "UUID", "Unix timestamp" },
+            selectedIndex = indexOf(FILENAME_PRESETS, settings.filenamePreset),
+            onChange = function(idx)
+                local value = FILENAME_PRESETS[idx + 1]
+                settings.filenamePreset = value
+                grabitSet("filename_preset", value)
+            end,
+        }),
+
+        ui.label({ text = "Filename template (overrides the preset)" }),
+        ui.input({
+            value = settings.filename or "",
+            placeholder = "%Y-%m-%d-%H-%M-%S",
+            onChange = function(value)
+                settings.filename = value
+                if value == "" then
+                    grabitUnset("filename")
+                else
+                    grabitSet("filename", value)
+                end
+            end,
+        }),
+
+        ui.separator({}),
+
+        -- Recording quality
+        ui.label({ text = "Recording quality", fontWeight = "bold" }),
+
+        ui.label({ text = "Frame rate (1-120)" }),
+        ui.input({
+            value = settings.recordingFps,
+            placeholder = "30",
+            onChange = function(value)
+                if not isIntegerInRange(value, 1, 120) then return end
+                settings.recordingFps = value
+                grabitSet("recording.fps", value)
+            end,
+        }),
+
+        ui.label({ text = "Container" }),
+        ui.select({
+            options = { "MP4", "WebM", "GIF" },
+            selectedIndex = indexOf(RECORDING_FORMATS, settings.recordingFormat),
+            onChange = function(idx)
+                local value = RECORDING_FORMATS[idx + 1]
+                settings.recordingFormat = value
+                grabitSet("recording.format", value)
+            end,
+        }),
+
+        ui.label({ text = "CRF (0-51, lower is higher quality)" }),
+        ui.input({
+            value = settings.recordingCrf,
+            placeholder = "23",
+            onChange = function(value)
+                if not isIntegerInRange(value, 0, 51) then return end
+                settings.recordingCrf = value
+                grabitSet("recording.crf", value)
+            end,
+        }),
+
+        ui.separator({}),
+
+        -- OCR translation
+        ui.label({ text = "OCR translation", fontWeight = "bold" }),
+        ui.label({
+            text = "Target language for the menu's OCR + translate entry",
+            fontSize = 12,
+            color = "on_surface_variant",
+        }),
+        ui.input({
+            value = settings.translateTarget,
+            placeholder = "en",
+            onChange = function(value)
+                settings.translateTarget = value
+                if value:match("^%a%a%a?$") then
+                    grabitSet("translate.target", value)
+                end
+            end,
+        }),
+
+        ui.separator({}),
+
         -- Open grabit config directly
         ui.button({
             text = "Open grabit config directory",
@@ -113,19 +333,37 @@ function renderSettings()
                     "capture.cursor",
                     "recording.cursor",
                     "service",
+                    "also_save",
+                    "format",
+                    "filename",
+                    "filename_preset",
+                    "recording.fps",
+                    "recording.format",
+                    "recording.crf",
+                    "translate.target",
                 }
-                for _, key in ipairs(keysToReset) do
-                    -- `grabit set <key> --reset` only works for keys.* keybinds.
-                    -- `grabit unset <key>` removes the key and restores the default.
-                    noctalia.runAsync({ "grabit", "unset", key }, function(res)
-                        if res.exitCode ~= 0 then
-                            noctalia.notifyError("Grabit", "Failed to reset " .. key .. ": " .. (res.stderr or ""))
-                        end
-                    end)
+                -- `grabit set <key> --reset` only works for keys.* keybinds.
+                -- `grabit unset <key>` removes the key and restores the default.
+                -- Wait for every unset before reading the values back; otherwise
+                -- the reload can race the unsets and show the old values.
+                local remaining = #keysToReset
+                local function settled()
+                    remaining = remaining - 1
+                    if remaining > 0 then return end
+                    noctalia.notify("Grabit", "Config keys reset to defaults")
+                    onOpen()
                 end
-                noctalia.notify("Grabit", "Config keys reset to defaults")
-                -- Reload the panel to reflect the new values
-                onOpen()
+                for _, key in ipairs(keysToReset) do
+                    local ok = noctalia.runAsync({ "grabit", "unset", key }, function(res)
+                        if res.exitCode ~= 0 then
+                            noctalia.notifyError(
+                                "Grabit", "Failed to reset " .. key .. ": " .. (res.stderr or "")
+                            )
+                        end
+                        settled()
+                    end)
+                    if not ok then settled() end
+                end
             end,
         }),
     }))

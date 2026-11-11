@@ -101,6 +101,14 @@ local function buildCaptureArgv(mode)
         table.insert(args, "--close-all")
     elseif mode == "ocr" then
         table.insert(args, "--tesseract")
+    elseif mode == "ocr-translate" then
+        -- Bare --translate uses grabit's translate.target config (default en).
+        table.insert(args, "--tesseract")
+        table.insert(args, "--translate")
+    elseif mode == "pin-grab" then
+        table.insert(args, "--grab")
+    elseif mode == "pin-release" then
+        table.insert(args, "--release")
     elseif mode == "annotate" then
         table.insert(args, "-e")
     elseif mode == "upload" then
@@ -128,7 +136,15 @@ local function buildCaptureArgv(mode)
 end
 
 local function buildRecordCommand()
-    return { "grabit", "--record" }
+    local args = { "grabit", "--record" }
+
+    -- grabit uploads a finished recording when `service` is configured.
+    -- The record_upload plugin setting lets the user opt out per plugin.
+    if cfg("record_upload") == false then
+        table.insert(args, "--no-upload")
+    end
+
+    return args
 end
 
 -- ── State management ─────────────────────────────────────────────
@@ -237,7 +253,7 @@ local function startRecording(delayMs)
         ownedPid = nil -- will be populated by detectRecordingState once the lockfile appears
 
         local cmd = buildRecordCommand()
-        log(`spawning: grabit --record`)
+        log("spawning: " .. table.concat(cmd, " "))
 
         -- Detached form (no callback): the callback form has a default 5s
         -- timeout and Noctalia kills the process group when it fires, which
@@ -315,7 +331,7 @@ local function spawnCapture(mode, delayMs)
         end
 
         local cmd = buildCaptureArgv(mode)
-        log(`spawning: grabit {mode}`)
+        log("spawning: " .. table.concat(cmd, " "))
 
         -- Detached form (no callback): a region select can stay open longer
         -- than the callback form's default 5s timeout, which would kill it.

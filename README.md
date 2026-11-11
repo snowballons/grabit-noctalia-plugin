@@ -33,7 +33,11 @@ Right-click the widget to access all capture modes:
 - Last region
 - Annotate
 - OCR to clipboard
+- OCR + translate
 - Pin to desktop
+- Grab pins (edit)
+- Release pins
+- Unpin all
 - Start recording
 - Settings...
 

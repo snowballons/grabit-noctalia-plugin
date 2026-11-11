@@ -50,6 +50,13 @@ description_key = "settings.show_cursor.description"
 default = true
 
 [[setting]]
+key = "record_upload"
+type = "bool"
+label_key = "settings.record_upload.label"
+description_key = "settings.record_upload.description"
+default = true
+
+[[setting]]
 key = "hide_inactive"
 type = "bool"
 label_key = "settings.hide_inactive.label"
@@ -74,7 +81,7 @@ entry = "shortcut.luau"
 [[panel]]
 id = "menu"
 entry = "menu.luau"
-width = 230
+width = 460
 height = "content"
 max_height = 500
 
