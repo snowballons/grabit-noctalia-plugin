@@ -76,4 +76,4 @@ The `capture` payload is a mode name (`copy`, `save`, `upload`, `fullscreen`, `w
 
 - Processes spawned: `grabit` (captures, recording, pause, pins, OCR), `sleep` (capture delay), and `xdg-open` (config folder). The plugin makes no network requests itself; uploads are done by grabit only when the chosen action uploads.
 - Files written: the plugin reads grabit's recording pid file in `$XDG_RUNTIME_DIR` and writes grabit config keys through the `grabit` CLI. Screenshots, recordings, and grabit's own log are written by grabit.
-- The standalone repository also ships an overlay layer, `recording`, that shows a recording/paused indicator at the top of the screen. It is not part of the community build because the community validator does not accept layer entries yet; recording state is still shown by the bar widget.
+- The standalone repository also ships the `recording` layer plus an `indicator` service that shows it only while recording or paused. Neither is part of the community build because the community validator does not accept layer entries yet; recording state is still shown by the bar widget and shortcut.

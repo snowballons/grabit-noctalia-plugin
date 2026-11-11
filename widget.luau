@@ -3,6 +3,10 @@
 -- The service owns grabit tracking; this widget mirrors the published "status"
 -- and drives grabit by writing to the "command" channel.
 
+-- The status channel only changes on transitions, so tick while recording to
+-- keep the tooltip's elapsed time advancing.
+noctalia.setUpdateInterval(1000)
+
 local state = "idle" -- idle | pending | recording | paused
 local available = false
 local recordingSince = 0
@@ -131,6 +135,12 @@ function onScroll(axis, steps, startsGesture)
 end
 
 -- ── Init ─────────────────────────────────────────────────────────
+
+function update()
+    if state == "recording" or state == "paused" then
+        applyStatus(noctalia.state.get("status"))
+    end
+end
 
 applyStatus(noctalia.state.get("status"))
 noctalia.state.watch("status", applyStatus)

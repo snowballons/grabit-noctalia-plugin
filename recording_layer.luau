@@ -1,7 +1,11 @@
 --!nonstrict
--- Recording indicator layer: shows a thin bar at the top of each output
--- while a recording is active or paused. Click-through so it doesn't
--- interfere with grabit's own recording control bar.
+-- Recording indicator layer: shown by the `indicator` service while a
+-- recording is active or paused. Click-through so it doesn't interfere with
+-- grabit's own recording control bar.
+
+-- The published status only changes on state transitions, so tick here to
+-- advance the elapsed time while the layer is shown.
+noctalia.setUpdateInterval(1000)
 
 local RED    = "error"
 local AMBER  = "warning"
@@ -48,6 +52,10 @@ local function render()
             }),
         }),
     }))
+end
+
+function update()
+    render()
 end
 
 noctalia.state.watch("status", render)

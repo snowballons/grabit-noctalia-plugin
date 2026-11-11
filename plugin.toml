@@ -97,9 +97,15 @@ width = 420
 height = "content"
 max_height = 600
 
-# Standalone build only: the community plugin validator does not accept
-# [[layer]] entries yet. Omit this block (and recording_layer.luau) from the
-# community submission; the widget still mirrors recording state without it.
+# ── Standalone-only entries ─────────────────────────────────────
+# The community validator does not accept [[layer]] entries yet. Omit this
+# service and layer (and indicator.luau + recording_layer.luau) from the
+# community submission; the widget and shortcut still mirror recording state.
+
+[[service]]
+id = "indicator"
+entry = "indicator.luau"
+
 [[layer]]
 id = "recording"
 entry = "recording_layer.luau"
