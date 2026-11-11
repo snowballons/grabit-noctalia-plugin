@@ -3,17 +3,17 @@
 # grabit handles the interactive UI (region selector, annotator, recording control bar);
 # this plugin provides a bar button, a mode menu, and recording-state mirroring.
 #
+# 42 is the floor: both panels use height = "content", which needs 42.
+# (Layer entries need 36; no other capability used here is newer than 42.)
 plugin_api = 42
-# process matching. The widget and shortcut are thin clients that mirror the
-# published "status" and drive grabit by writing to the "command" channel.
 
 id = "snowballons/grabit"
 name = "Grabit Launcher"
 version = "1.0.0"
 author = "snowballons"
 license = "MIT"
-dependencies = ["grabit"]
-tags = ["screenshot", "screen-recording", "ocr", "upload"]
+dependencies = ["grabit", "sleep", "xdg-open"]
+tags = ["bar", "panel", "shortcut", "service", "recording", "utility", "network", "language"]
 icon = "screenshot"
 description = "Launch grabit for screenshots, screen recording, OCR, and uploads."
 
@@ -69,6 +69,11 @@ default = false
 id = "widget"
 entry = "widget.luau"
 
+  # Middle click is bound to "settings-open-widget" for every widget by the
+  # shell. Free it so the widget's own onMiddleClick (last region) can fire.
+  [widget.actions]
+  middle = "none"
+
 
 [[service]]
 id = "service"
@@ -92,6 +97,9 @@ width = 420
 height = "content"
 max_height = 600
 
+# Standalone build only: the community plugin validator does not accept
+# [[layer]] entries yet. Omit this block (and recording_layer.luau) from the
+# community submission; the widget still mirrors recording state without it.
 [[layer]]
 id = "recording"
 entry = "recording_layer.luau"

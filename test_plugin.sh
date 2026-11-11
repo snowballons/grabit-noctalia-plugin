@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Grabit Plugin Test Script
+# Development-only driver: it dispatches real IPC events, so it is not shipped
+# with the community plugin. The community copy excludes this file.
 # Tests the plugin functionality via IPC
 
 set -euo pipefail

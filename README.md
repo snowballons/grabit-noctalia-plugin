@@ -1,65 +1,79 @@
 # Grabit Launcher
 
-A Noctalia plugin that launches [grabit](https://heliopolis.live/creations/grabit) for screenshots, screen recording, OCR, and uploads.
+Launch grabit for region screenshots, screen recording, OCR, translation, pins, and uploads from a bar widget, a mode menu, and a control-center shortcut.
 
-grabit handles the interactive UI (region selector, annotator, recording control bar). This plugin provides a bar button, a mode menu, and recording-state mirroring — so grabit feels like a native part of the shell.
+## Plugin
 
-## Features
-
-- **Bar widget** with gesture-based capture modes
-- **Right-click menu** for all grabit capture modes
-- **Recording state mirroring** — the widget shows live recording status
-- **Recording indicator layer** — thin red bar at screen top while recording
-- **Control-center shortcut** — capture from the control center
-- **Settings panel** — configure grabit behavior
-
-## Widget Gestures
-
-| Gesture | Action | grabit flag |
-|---------|--------|-------------|
-| Left click | Default capture (region → clipboard) | `-c` |
-| Right click | Open mode menu | — |
-| Middle click | Last region | `-L` |
-| Scroll up | Fullscreen | `-F` |
-| Scroll down | Window | `-w` |
-
-## Mode Menu
-
-Right-click the widget to access all capture modes:
-
-- Region (copy / save / upload)
-- Fullscreen
-- Window
-- Last region
-- Annotate
-- OCR to clipboard
-- OCR + translate
-- Pin to desktop
-- Grab pins (edit)
-- Release pins
-- Unpin all
-- Start recording
-- Settings...
+| Field | Value |
+| --- | --- |
+| ID | `snowballons/grabit` |
+| Entries | Bar widget: `widget`; panels: `menu`, `settings`; shortcut: `shortcut`; service: `service` |
 
 ## Requirements
 
-- [grabit](https://heliopolis.live/creations/grabit) installed on `PATH`
-- Noctalia v5+ with plugin support
+Install `grabit`, `sleep`, and `xdg-open` on `PATH`.
 
-## Installation
+- `grabit` does every capture, recording, OCR, translation, pin, and upload. Its config is read and written with `grabit set` and `grabit unset`.
+- `sleep` provides the short delay before a capture so a closing panel is not captured.
+- `xdg-open` opens the grabit config directory from the settings panel.
 
-Add this as a git source in Noctalia Settings → Plugins:
+[grabit](https://heliopolis.live/creations/grabit) handles the interactive UI (region selector, annotator, recording control bar). The widget and shortcut are thin clients that mirror the published status and drive grabit through the service.
 
+## Usage
+
+Add the Grabit widget to a bar in Settings → Bar. Left-click runs the configured default action; right-click opens the mode menu.
+
+| Gesture | Action |
+| --- | --- |
+| Left click | Default action (`copy`, `save`, or `upload`) |
+| Right click | Open the mode menu |
+| Middle click | Capture the last region |
+| Scroll up | Fullscreen capture |
+| Scroll down | Window capture |
+
+The mode menu offers region copy/save/upload, fullscreen, window, last region, annotate, OCR, OCR + translate, pin to desktop, grab pins, release pins, unpin all, recording, and settings.
+
+![Mode menu](screenshots/menu.webp)
+
+Both panels can also be opened from the command line:
+
+```sh
+noctalia msg panel-toggle snowballons/grabit:menu
+noctalia msg panel-toggle snowballons/grabit:settings
 ```
-https://github.com/snowballons/grabit
+
+The control-center shortcut mirrors the widget: left-click captures or stops an active recording, right-click opens the menu. Add it in Settings → Control center → Shortcuts.
+
+![Settings panel](screenshots/settings.webp)
+
+## Settings
+
+| Setting | Type | Default | Description |
+| --- | --- | --- | --- |
+| `default_action` | `select` | `copy` | Action for a plain left-click: copy to clipboard, save to file, or upload. |
+| `upload_service` | `string` | empty | grabit upload target used by upload captures and the menu's upload entry, for example `zipline`, `nest`, or a ShareX `.sxcu` uploader name. |
+| `show_cursor` | `bool` | `true` | Include the mouse pointer in captures and recordings. Writes both `capture.cursor` and `recording.cursor`. |
+| `record_upload` | `bool` | `true` | Upload a finished recording when an upload service is configured. When off, recordings start with `--no-upload`. |
+| `hide_inactive` | `bool` | `false` | Hide the bar widget while no capture or recording is active. |
+
+The settings panel also edits grabit's own config: `also_save`, image `format`, `filename` and `filename_preset`, `recording.fps`, `recording.format`, `recording.crf`, and `translate.target`.
+
+## IPC
+
+The service accepts events for scripted control:
+
+```sh
+noctalia msg plugin snowballons/grabit:service all capture copy
+noctalia msg plugin snowballons/grabit:service all record
+noctalia msg plugin snowballons/grabit:service all pause
+noctalia msg plugin snowballons/grabit:service all resume
+noctalia msg plugin snowballons/grabit:service all stop
 ```
 
-Or copy to your local plugins directory:
+The `capture` payload is a mode name (`copy`, `save`, `upload`, `fullscreen`, `window`, `last`, `annotate`, `ocr`, `ocr-translate`, `pin`, `pin-grab`, `pin-release`, `unpin-all`) or a table with `mode` and `delay_ms`. `record` accepts a table with `delay_ms`.
 
-```bash
-cp -r grabit ~/.local/share/noctalia/plugins/
-```
+## Notes
 
-## License
-
-MIT
+- Processes spawned: `grabit` (captures, recording, pause, pins, OCR), `sleep` (capture delay), and `xdg-open` (config folder). The plugin makes no network requests itself; uploads are done by grabit only when the chosen action uploads.
+- Files written: the plugin reads grabit's recording pid file in `$XDG_RUNTIME_DIR` and writes grabit config keys through the `grabit` CLI. Screenshots, recordings, and grabit's own log are written by grabit.
+- The standalone repository also ships an overlay layer, `recording`, that shows a recording/paused indicator at the top of the screen. It is not part of the community build because the community validator does not accept layer entries yet; recording state is still shown by the bar widget.
