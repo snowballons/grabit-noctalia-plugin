@@ -94,6 +94,12 @@ function onOpen()
             variant = "ghost",
             onClick = function() captureMode("pin") end,
         }),
+        ui.button({
+            text = "Unpin all",
+            glyph = "x",
+            variant = "ghost",
+            onClick = function() captureMode("unpin-all") end,
+        }),
 
         ui.separator({ margin = 4 }),
 

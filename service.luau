@@ -58,9 +58,8 @@ local function buildCaptureCommand(mode)
     elseif mode == "window" then
         flags = "-w"
     elseif mode == "last" then
-        flags = "-L"
-    elseif mode == "pin" then
-        flags = "--pin"
+    elseif mode == "unpin-all" then
+        flags = "--close-all"
     elseif mode == "ocr" then
         flags = "--tesseract"
     elseif mode == "annotate" then
