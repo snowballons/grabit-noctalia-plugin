@@ -111,7 +111,9 @@ function renderSettings()
                     "service",
                 }
                 for _, key in ipairs(keysToReset) do
-                    noctalia.runAsync({ "grabit", "set", key, "--reset" }, function(res)
+                    -- `grabit set <key> --reset` only works for keys.* keybinds.
+                    -- `grabit unset <key>` removes the key and restores the default.
+                    noctalia.runAsync({ "grabit", "unset", key }, function(res)
                         if res.exitCode ~= 0 then
                             noctalia.notifyError("Grabit", "Failed to reset " .. key .. ": " .. (res.stderr or ""))
                         end
