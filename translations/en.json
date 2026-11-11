@@ -1,0 +1,13 @@
+{
+  "settings.default_action.label": "Default action",
+  "settings.default_action.description": "What happens when you left-click the widget",
+  "settings.default_action.options.copy": "Copy to clipboard",
+  "settings.default_action.options.save": "Save to file",
+  "settings.default_action.options.upload": "Upload",
+  "settings.upload_service.label": "Upload service",
+  "settings.upload_service.description": "grabit upload target: zipline, nest, or a ShareX .sxcu uploader name",
+  "settings.show_cursor.label": "Include mouse cursor",
+  "settings.show_cursor.description": "Include the mouse pointer in captures",
+  "settings.hide_inactive.label": "Hide widget when idle",
+  "settings.hide_inactive.description": "Hide the bar widget when no capture or recording is active"
+}
