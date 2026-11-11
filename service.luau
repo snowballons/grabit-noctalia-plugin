@@ -14,33 +14,10 @@ local function log(msg)
 end
 
 -- grabit writes the recording PID here (XDG_RUNTIME_DIR / grabit_recording.pid).
--- XDG_RUNTIME_DIR is mandatory in every Wayland session (set by the session
--- manager before any user process starts), so os.getenv should always succeed.
--- The fallback reads the real UID from /proc/self/loginuid rather than using
--- os.getenv("UID"), which is a bash shell variable and is never exported.
-local function resolveRuntimeDir()
-    local xdg = os.getenv("XDG_RUNTIME_DIR")
-    if xdg and xdg ~= "" then return xdg end
-
-    -- Fallback: derive from the real UID via /proc/self/loginuid
-    local ok, uid = pcall(function()
-        return noctalia.readFile("/proc/self/loginuid")
-    end)
-    if ok and uid then
-        uid = uid:match("^%s*(%d+)%s*$")
-        if uid and tonumber(uid) ~= 4294967295 then -- 0xFFFFFFFF = unset loginuid
-            return "/run/user/" .. uid
-        end
-    end
-
-    -- Last resort: log and return nil so callers skip PID-file tracking
-    log("cannot determine XDG_RUNTIME_DIR; PID tracking disabled")
-    return nil
-end
-local GRABIT_PID_FILE = (function()
-    local dir = resolveRuntimeDir()
-    return dir and (dir .. "/grabit_recording.pid") or nil
-end)()
+-- Resolved lazily on the first update() tick (os.getenv is unavailable during
+-- the initial chunk-load phase in Noctalia's Luau sandbox).
+local GRABIT_PID_FILE = nil
+local GRABIT_PID_FILE_RESOLVED = false
 
 local state = "idle" -- idle | pending | recording | paused
 local recordingSince = 0
@@ -83,6 +60,18 @@ end
 -- ── Availability ─────────────────────────────────────────────────
 
 local function checkAvailability()
+    -- Resolve the PID file path on first tick using noctalia.getenv
+    -- (os.getenv and io are not available in Noctalia's Luau sandbox).
+    if not GRABIT_PID_FILE_RESOLVED then
+        GRABIT_PID_FILE_RESOLVED = true
+        local xdg = noctalia.getenv("XDG_RUNTIME_DIR")
+        if xdg and xdg ~= "" then
+            GRABIT_PID_FILE = xdg .. "/grabit_recording.pid"
+        else
+            log("XDG_RUNTIME_DIR not set; PID-file tracking disabled")
+        end
+    end
+
     if noctalia.commandExists("grabit") then
         log("grabit found")
         return true
@@ -211,9 +200,11 @@ local function detectRecordingState(callback)
                 ownedPid = nil
                 callback(false)
             end
-        elseif state == "pending" then
-            -- We just spawned; we do not yet know the PID. Accept the match
-            -- and record the pid from the lockfile once available.
+        elseif state ~= "idle" then
+            -- We spawned this recording but have not adopted its pid yet.
+            -- grabit writes the lockfile only once encoding starts, which can
+            -- be later than the pending window, so keep trying while the
+            -- recording lives instead of treating it as foreign.
             local filePid = readGrabitPidFile()
             if filePid then
                 log(`adopted pid {filePid} from lockfile`)
