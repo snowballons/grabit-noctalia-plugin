@@ -58,6 +58,9 @@ local function buildCaptureCommand(mode)
     elseif mode == "window" then
         flags = "-w"
     elseif mode == "last" then
+        flags = "-L"
+    elseif mode == "pin" then
+        flags = "--pin"
     elseif mode == "unpin-all" then
         flags = "--close-all"
     elseif mode == "ocr" then
@@ -73,18 +76,17 @@ local function buildCaptureCommand(mode)
         flags = "-c"
     end
 
-    -- Append upload service if configured and mode is upload
-    local service = cfg("upload_service")
-    if service ~= "" and service ~= nil then
-        flags = flags .. " --" .. service
+    -- Upload service only applies to upload mode; grabit rejects service
+    -- flags for any other action.
+    if mode == "upload" then
+        local service = cfg("upload_service")
+        if service ~= "" and service ~= nil then
+            flags = flags .. " --" .. service
+        end
     end
 
-    -- Cursor setting
-    local showCursor = cfg("show_cursor")
-    if showCursor ~= nil and not showCursor then
-        flags = flags .. " --no-cursor"
-    end
-
+    -- Cursor visibility is the `capture.cursor` config key (written by the
+    -- settings panel). grabit has no --no-cursor flag, so don't pass one.
     return `grabit {flags}`
 end
 
