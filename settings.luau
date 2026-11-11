@@ -10,9 +10,9 @@ local function indexOf(arr, value)
     return 0
 end
 
--- Write a grabit config value via CLI
+-- Write a grabit config value via CLI (argv form avoids shell parsing of values)
 local function grabitSet(key, value)
-    noctalia.runAsync(`grabit set {key} {value}`, function(res)
+    noctalia.runAsync({ "grabit", "set", key, value }, function(res)
         if res.exitCode ~= 0 then
             noctalia.notifyError("Grabit", "Failed to set config: " .. (res.stderr or "unknown error"))
         end
@@ -101,8 +101,25 @@ function renderSettings()
             glyph = "refresh-ccw",
             variant = "destructive",
             onClick = function()
-                noctalia.runAsync("grabit set --reset")
-                noctalia.notify("Grabit", "Config reset to defaults")
+                -- grabit set --reset only resets individual keys; there is no
+                -- "reset everything" subcommand. Reset the keys this plugin
+                -- manages explicitly instead.
+                -- Use argv form to avoid shell parsing.
+                local keysToReset = {
+                    "default_action",
+                    "capture.cursor",
+                    "service",
+                }
+                for _, key in ipairs(keysToReset) do
+                    noctalia.runAsync({ "grabit", "set", key, "--reset" }, function(res)
+                        if res.exitCode ~= 0 then
+                            noctalia.notifyError("Grabit", "Failed to reset " .. key .. ": " .. (res.stderr or ""))
+                        end
+                    end)
+                end
+                noctalia.notify("Grabit", "Config keys reset to defaults")
+                -- Reload the panel to reflect the new values
+                onOpen()
             end,
         }),
     }))

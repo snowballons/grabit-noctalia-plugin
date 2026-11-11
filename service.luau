@@ -9,6 +9,9 @@ noctalia.setUpdateInterval(500)
 local CHECK_TICKS = 4 -- 4 * 500ms = 2s between process checks
 local PENDING_TICKS = 4 -- 4 * 500ms = 2s wait for recording to start
 
+-- grabit writes the recording PID here (XDG_RUNTIME_DIR / grabit_recording.pid)
+local GRABIT_PID_FILE = (os.getenv("XDG_RUNTIME_DIR") or ("/run/user/" .. (os.getenv("UID") or "1000"))) .. "/grabit_recording.pid"
+
 local state = "idle" -- idle | pending | recording | paused
 local recordingSince = 0
 local isAvailable = false
@@ -16,6 +19,10 @@ local tickCount = 0
 local pendingSince = 0
 local processCheckPending = false
 local stateGeneration = 0
+-- PID of the grabit --record process this service spawned.
+-- nil when no recording is owned by this plugin instance.
+-- Used to distinguish our recording from a foreign one started outside the plugin.
+local ownedPid = nil
 
 local function cfg(key)
     return noctalia.getConfig(key)
@@ -50,30 +57,32 @@ end
 
 -- ── Command builders ─────────────────────────────────────────────
 
-local function buildCaptureCommand(mode)
-    local flags = ""
+-- Returns an argv table for the given capture mode.
+-- Using an array avoids shell parsing of service names or future flag values.
+local function buildCaptureArgv(mode)
+    local args = { "grabit" }
 
     if mode == "fullscreen" then
-        flags = "-F"
+        table.insert(args, "-F")
     elseif mode == "window" then
-        flags = "-w"
+        table.insert(args, "-w")
     elseif mode == "last" then
-        flags = "-L"
+        table.insert(args, "-L")
     elseif mode == "pin" then
-        flags = "--pin"
+        table.insert(args, "--pin")
     elseif mode == "unpin-all" then
-        flags = "--close-all"
+        table.insert(args, "--close-all")
     elseif mode == "ocr" then
-        flags = "--tesseract"
+        table.insert(args, "--tesseract")
     elseif mode == "annotate" then
-        flags = "-e"
+        table.insert(args, "-e")
     elseif mode == "upload" then
-        flags = "-u"
+        table.insert(args, "-u")
     elseif mode == "save" then
-        flags = "-o"
+        table.insert(args, "-o")
     else
         -- default: copy to clipboard
-        flags = "-c"
+        table.insert(args, "-c")
     end
 
     -- Upload service only applies to upload mode; grabit rejects service
@@ -81,17 +90,18 @@ local function buildCaptureCommand(mode)
     if mode == "upload" then
         local service = cfg("upload_service")
         if service ~= "" and service ~= nil then
-            flags = flags .. " --" .. service
+            -- Pass as a separate argv element; no shell quoting needed.
+            table.insert(args, "--" .. service)
         end
     end
 
     -- Cursor visibility is the `capture.cursor` config key (written by the
     -- settings panel). grabit has no --no-cursor flag, so don't pass one.
-    return `grabit {flags}`
+    return args
 end
 
 local function buildRecordCommand()
-    return "grabit --record"
+    return { "grabit", "--record" }
 end
 
 -- ── State management ─────────────────────────────────────────────
@@ -122,23 +132,64 @@ end
 
 -- ── Process detection ────────────────────────────────────────────
 
+-- Read the PID from grabit's lockfile (written at recording start).
+-- Returns the PID as a number, or nil if the file is absent/unreadable.
+local function readGrabitPidFile()
+    local ok, result = pcall(function()
+        return noctalia.readFile(GRABIT_PID_FILE)
+    end)
+    if not ok or not result then return nil end
+    local pid = tonumber(result:match("^%s*(%d+)%s*$"))
+    return pid
+end
+
 local function detectRecordingState(callback)
-    local pending = 1
+    -- Check for any grabit --record process via /proc scan
+    local ok = noctalia.processMatches(function(anyRecording)
+        log(`process match --record: {anyRecording}`)
 
-    local function finish(recording)
-        pending -= 1
-        if pending > 0 then return end
-        callback(recording)
-    end
+        if not anyRecording then
+            -- No grabit --record running at all
+            callback(false)
+            return
+        end
 
-    -- Check for grabit --record process
-    local ok = noctalia.processMatches(function(matched)
-        log(`process match --record: {matched}`)
-        finish(matched)
+        -- A grabit --record process exists somewhere.  Only treat it as
+        -- *ours* if either:
+        --   (a) we have an ownedPid and the pid file still matches, or
+        --   (b) we are in pending/recording/paused state (we spawned it).
+        -- This prevents the plugin from hijacking a foreign recording
+        -- started via a sway keybind or another terminal session.
+        if ownedPid ~= nil then
+            local filePid = readGrabitPidFile()
+            if filePid == ownedPid then
+                callback(true)
+            else
+                -- The pid file changed: our process ended and a new, foreign
+                -- one started. Disown it.
+                log(`pid file changed (expected {ownedPid}, got {tostring(filePid)}) — disowning`)
+                ownedPid = nil
+                callback(false)
+            end
+        elseif state == "pending" then
+            -- We just spawned; we do not yet know the PID. Accept the match
+            -- and record the pid from the lockfile once available.
+            local filePid = readGrabitPidFile()
+            if filePid then
+                log(`adopted pid {filePid} from lockfile`)
+                ownedPid = filePid
+            end
+            callback(true)
+        else
+            -- A grabit --record is running but we did not start it.
+            log("foreign grabit --record detected; ignoring")
+            callback(false)
+        end
     end, "grabit", "--record")
+
     if not ok then
         log("processMatches unavailable")
-        finish(false)
+        callback(false)
     end
 end
 
@@ -152,9 +203,10 @@ local function startRecording(delayMs)
 
         setState("pending")
         pendingSince = tickCount
+        ownedPid = nil -- will be populated by detectRecordingState once the lockfile appears
 
         local cmd = buildRecordCommand()
-        log(`spawning: {cmd}`)
+        log(`spawning: grabit --record`)
 
         -- Detached form (no callback): the callback form has a default 5s
         -- timeout and Noctalia kills the process group when it fires, which
@@ -163,6 +215,7 @@ local function startRecording(delayMs)
 
         if not ok then
             log("failed to spawn grabit --record")
+            ownedPid = nil
             setState("idle")
             noctalia.notifyError("Grabit", "Failed to start recording")
         end
@@ -173,10 +226,40 @@ local function stopRecording()
     if state == "idle" then return end
 
     log("stopping recording (toggle)")
-    -- grabit --record toggles: second invocation stops it
-    noctalia.runAsync("grabit --record")
+    -- grabit --record is a toggle: a second invocation stops the running session.
+    -- Use argv form to avoid shell parsing.
+    noctalia.runAsync({ "grabit", "--record" })
+    ownedPid = nil
     recordingSince = 0
     setState("idle")
+end
+
+-- Send grabit --pause (SIGUSR1 to the recording process).
+-- grabit toggles pause/resume on each --pause invocation.
+local function pauseRecording()
+    if state ~= "recording" then return end
+
+    log("pausing recording")
+    local ok = noctalia.runAsync({ "grabit", "--pause" })
+    if ok then
+        setState("paused")
+    else
+        log("failed to send --pause")
+        noctalia.notifyError("Grabit", "Failed to pause recording")
+    end
+end
+
+local function resumeRecording()
+    if state ~= "paused" then return end
+
+    log("resuming recording")
+    local ok = noctalia.runAsync({ "grabit", "--pause" })
+    if ok then
+        setState("recording")
+    else
+        log("failed to send --pause (resume)")
+        noctalia.notifyError("Grabit", "Failed to resume recording")
+    end
 end
 
 -- ── Capture spawning ─────────────────────────────────────────────
@@ -197,8 +280,8 @@ local function spawnCapture(mode, delayMs)
             return
         end
 
-        local cmd = buildCaptureCommand(mode)
-        log(`spawning: {cmd}`)
+        local cmd = buildCaptureArgv(mode)
+        log(`spawning: grabit {mode}`)
 
         -- Detached form (no callback): a region select can stay open longer
         -- than the callback form's default 5s timeout, which would kill it.
@@ -289,6 +372,12 @@ function onIpc(event, payload)
     elseif event == "record" then
         startRecording(if type(payload) == "table" then payload.delay_ms else nil)
 
+    elseif event == "pause" then
+        pauseRecording()
+
+    elseif event == "resume" then
+        resumeRecording()
+
     elseif event == "stop" then
         stopRecording()
 
@@ -302,6 +391,7 @@ end
 function onExit()
     if state ~= "idle" then
         log("stopping recording (service exit)")
+        ownedPid = nil
         stopRecording()
     end
 end

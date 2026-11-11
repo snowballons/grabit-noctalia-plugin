@@ -37,7 +37,10 @@ type = "string"
 label_key = "settings.upload_service.label"
 description_key = "settings.upload_service.description"
 default = ""
-visible_when = { key = "default_action", values = ["upload"] }
+# visible_when was previously restricted to default_action == "upload", but the
+# menu's "Region (upload)" item uses upload_service regardless of default_action.
+# Always show it so users can configure their uploader even when their default
+# action is copy or save.
 
 [[setting]]
 key = "show_cursor"

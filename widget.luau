@@ -88,8 +88,7 @@ function onClick()
     if state == "recording" then
         send("stop")
     elseif state == "paused" then
-        -- resume via toggle
-        send("record")
+        send("resume")
     elseif state == "pending" then
         send("stop")
     else
@@ -101,9 +100,11 @@ end
 function onRightClick()
     if not available then return end
 
-    if state == "recording" or state == "paused" then
-        -- pause/resume from the menu
-        send("record") -- grabit --record toggles pause when already recording
+    if state == "recording" then
+        send("pause")
+        return
+    elseif state == "paused" then
+        send("stop")
         return
     end
 
