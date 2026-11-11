@@ -97,10 +97,9 @@ width = 420
 height = "content"
 max_height = 600
 
-# ── Standalone-only entries ─────────────────────────────────────
-# The community validator does not accept [[layer]] entries yet. Omit this
-# service and layer (and indicator.luau + recording_layer.luau) from the
-# community submission; the widget and shortcut still mirror recording state.
+# ── Recording indicator ─────────────────────────────────────────
+# The layer is lazy, so the indicator service shows it while recording or
+# paused and hides it again on stop.
 
 [[service]]
 id = "indicator"
