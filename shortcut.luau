@@ -12,6 +12,11 @@ local function applyStatus(status)
     end
 end
 
+-- No delay_ms here, unlike the menu (menu.luau CAPTURE_DELAY_MS): activating a
+-- shortcut does not dismiss the control center, so there is no panel close
+-- animation to wait for. The control center does stay on screen, though, so it
+-- can appear in captures started from here — the bar widget and menu do not
+-- have that problem.
 function onClick()
     if not available then return end
     if state ~= "idle" then

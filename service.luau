@@ -6,8 +6,9 @@
 
 noctalia.setUpdateInterval(500)
 
-local CHECK_TICKS = 4 -- 4 * 500ms = 2s between process checks
-local PENDING_TICKS = 4 -- 4 * 500ms = 2s wait for recording to start
+local CHECK_TICKS = 4 -- 4 * 500ms = 2s between process checks while recording
+local PENDING_SECS = 2 -- wait this long for the recording to appear
+local AVAILABILITY_TICKS = 20 -- 20 * 500ms = 10s between availability re-checks
 
 local function log(msg)
     noctalia.log(`grabit: {msg}`)
@@ -61,7 +62,7 @@ end
 
 local function checkAvailability()
     -- Resolve the PID file path on first tick using noctalia.getenv
-    -- (os.getenv and io are not available in Noctalia's Luau sandbox).
+    -- (os.getenv is unavailable in Noctalia's Luau sandbox).
     if not GRABIT_PID_FILE_RESOLVED then
         GRABIT_PID_FILE_RESOLVED = true
         local xdg = noctalia.getenv("XDG_RUNTIME_DIR")
@@ -72,14 +73,7 @@ local function checkAvailability()
         end
     end
 
-    if noctalia.commandExists("grabit") then
-        log("grabit found")
-        return true
-    end
-    if tickCount % CHECK_TICKS == 0 then -- log sparingly
-        log("grabit NOT found on PATH")
-    end
-    return false
+    return noctalia.commandExists("grabit")
 end
 
 -- ── Command builders ─────────────────────────────────────────────
@@ -249,7 +243,7 @@ local function startRecording(delayMs)
         if not isAvailable or state ~= "idle" then return end
 
         setState("pending")
-        pendingSince = tickCount
+        pendingSince = os.clock()
         ownedPid = nil -- will be populated by detectRecordingState once the lockfile appears
 
         local cmd = buildRecordCommand()
@@ -348,7 +342,7 @@ end
 
 local function checkProcessState(recording)
     if state == "pending" then
-        if tickCount - pendingSince >= PENDING_TICKS then
+        if os.clock() - pendingSince >= PENDING_SECS then
             if recording then
                 log("recording active")
                 recordingSince = os.time()
@@ -387,12 +381,26 @@ end
 function update()
     tickCount += 1
 
-    if not isAvailable then
-        isAvailable = checkAvailability()
+    -- While missing, re-check every tick so an installation is picked up at
+    -- once; once found, re-check periodically so a removal or PATH change is
+    -- noticed. Log on transitions only, plus a periodic reminder while the
+    -- binary stays missing.
+    if not isAvailable or tickCount % AVAILABILITY_TICKS == 0 then
+        local available = checkAvailability()
+        if available ~= isAvailable then
+            isAvailable = available
+            log(available and "grabit found" or "grabit not found on PATH")
+        elseif not available and tickCount % CHECK_TICKS == 0 then
+            log("grabit not found on PATH")
+        end
     end
 
-    if state ~= "idle" and tickCount % CHECK_TICKS == 0 then
-        requestProcessStateCheck()
+    if state ~= "idle" then
+        -- While pending, check every tick so the wall-clock timeout is
+        -- evaluated promptly instead of on the 2s recording cadence.
+        if state == "pending" or tickCount % CHECK_TICKS == 0 then
+            requestProcessStateCheck()
+        end
     end
 
     publishStatus()
@@ -433,6 +441,9 @@ function onIpc(event, payload)
 
     elseif event == "settings" then
         noctalia.togglePanel("snowballons/grabit:settings")
+
+    else
+        log(`unknown ipc event '{event}' — ignored`)
     end
 end
 
@@ -451,5 +462,7 @@ noctalia.state.watch("command", function(cmd)
     local action = if type(cmd) == "table" and cmd.action ~= nil then cmd.action else cmd
     if type(action) == "string" then
         onIpc(action, if type(cmd) == "table" then cmd else nil)
+    else
+        log("command payload has no action — ignored")
     end
 end)
