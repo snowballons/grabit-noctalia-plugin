@@ -3,14 +3,13 @@
 # grabit handles the interactive UI (region selector, annotator, recording control bar);
 # this plugin provides a bar button, a mode menu, and recording-state mirroring.
 #
-# The service spawns grabit with the right flags and tracks recording state via
+plugin_api = 42
 # process matching. The widget and shortcut are thin clients that mirror the
 # published "status" and drive grabit by writing to the "command" channel.
 
 id = "snowballons/grabit"
 name = "Grabit Launcher"
 version = "1.0.0"
-plugin_api = 36
 author = "snowballons"
 license = "MIT"
 dependencies = ["grabit"]
@@ -57,7 +56,7 @@ default = false
 # ── Entries ──────────────────────────────────────────────────────
 
 [[widget]]
-id = "grabit"
+id = "widget"
 entry = "widget.luau"
 
   [widget.actions]
@@ -68,11 +67,11 @@ entry = "widget.luau"
   scroll_down = "grabit-window"
 
 [[service]]
-id = "grabit"
+id = "service"
 entry = "service.luau"
 
 [[shortcut]]
-id = "grabit"
+id = "shortcut"
 entry = "shortcut.luau"
 
 [[panel]]
