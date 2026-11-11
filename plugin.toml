@@ -59,12 +59,6 @@ default = false
 id = "widget"
 entry = "widget.luau"
 
-  [widget.actions]
-  left = "grabit-capture"
-  right = "grabit-menu"
-  middle = "grabit-last"
-  scroll_up = "grabit-fullscreen"
-  scroll_down = "grabit-window"
 
 [[service]]
 id = "service"
