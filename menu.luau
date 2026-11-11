@@ -1,18 +1,29 @@
 --!nonstrict
 -- Grabit mode menu: right-click panel with all capture mode options.
 
+-- Let the panel finish its close animation before grabit starts. grabit's own
+-- --delay only accepts whole seconds, so the service defers the spawn instead.
+local CAPTURE_DELAY_MS = 300
+
 local function closePanel()
     panel.close()
 end
 
 local function captureMode(mode)
-    noctalia.state.set("command", { action = "capture", mode = mode })
     closePanel()
+    noctalia.state.set("command", {
+        action = "capture",
+        mode = mode,
+        delay_ms = CAPTURE_DELAY_MS,
+    })
 end
 
 local function recordMode()
-    noctalia.state.set("command", { action = "record" })
     closePanel()
+    noctalia.state.set("command", {
+        action = "record",
+        delay_ms = CAPTURE_DELAY_MS,
+    })
 end
 
 local function openSettings()

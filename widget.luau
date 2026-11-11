@@ -75,14 +75,7 @@ local function applyStatus(status)
     else
         barWidget.setGlyph("screenshot")
         barWidget.setGlyphColor("on_surface")
-        barWidget.setTooltip({
-            { label = "Grabit", value = "Screenshot & recording tools" },
-            { label = "Left click", value = "Region screenshot" },
-            { label = "Right click", value = "More capture modes" },
-            { label = "Middle click", value = "Last region" },
-            { label = "Scroll up", value = "Fullscreen" },
-            { label = "Scroll down", value = "Window" },
-        })
+        barWidget.setTooltip("Grabit")
         barWidget.setVisible(not hideInactive)
     end
 end

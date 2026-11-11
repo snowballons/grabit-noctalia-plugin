@@ -102,6 +102,22 @@ local function setState(nextState)
     publishStatus()
 end
 
+-- Defer spawning so a closing panel/tooltip is gone before grabit freezes the
+-- screen. grabit's --delay flag only accepts whole seconds, so wait here via
+-- runAsync's documented onResult callback instead.
+local function defer(delayMs, fn)
+    if type(delayMs) ~= "number" or delayMs <= 0 then
+        fn()
+        return
+    end
+
+    local ok = noctalia.runAsync({ "sleep", string.format("%.3f", delayMs / 1000) }, fn)
+    if not ok then
+        log("failed to defer, running immediately")
+        fn()
+    end
+end
+
 -- ── Process detection ────────────────────────────────────────────
 
 local function detectRecordingState(callback)
@@ -126,28 +142,32 @@ end
 
 -- ── Recording controls ───────────────────────────────────────────
 
-local function startRecording()
+local function startRecording(delayMs)
     if not isAvailable or state ~= "idle" then return end
 
-    setState("pending")
-    pendingSince = tickCount
+    defer(delayMs, function()
+        if not isAvailable or state ~= "idle" then return end
 
-    local cmd = buildRecordCommand()
-    log(`spawning: {cmd}`)
+        setState("pending")
+        pendingSince = tickCount
 
-    local ok = noctalia.runAsync(cmd, function(result)
-        log(`grabit --record exited with code {result.exitCode or "?"}`)
-        recordingSince = 0
-        if state ~= "idle" then
+        local cmd = buildRecordCommand()
+        log(`spawning: {cmd}`)
+
+        local ok = noctalia.runAsync(cmd, function(result)
+            log(`grabit --record exited with code {result.exitCode or "?"}`)
+            recordingSince = 0
+            if state ~= "idle" then
+                setState("idle")
+            end
+        end)
+
+        if not ok then
+            log("failed to spawn grabit --record")
             setState("idle")
+            noctalia.notifyError("Grabit", "Failed to start recording")
         end
     end)
-
-    if not ok then
-        log("failed to spawn grabit --record")
-        setState("idle")
-        noctalia.notifyError("Grabit", "Failed to start recording")
-    end
 end
 
 local function stopRecording()
@@ -162,7 +182,7 @@ end
 
 -- ── Capture spawning ─────────────────────────────────────────────
 
-local function spawnCapture(mode)
+local function spawnCapture(mode, delayMs)
     if not isAvailable then
         noctalia.notifyError("Grabit", "grabit is not installed")
         return
@@ -172,21 +192,28 @@ local function spawnCapture(mode)
         return
     end
 
-    local cmd = buildCaptureCommand(mode)
-    log(`spawning: {cmd}`)
+    defer(delayMs, function()
+        if state ~= "idle" then
+            noctalia.notifyError("Grabit", "A capture or recording is already in progress")
+            return
+        end
 
-    local ok = noctalia.runAsync(cmd, function(result)
-        local code = result.exitCode or "?"
-        log(`grabit exited with code {code}`)
-        if code ~= 0 and result.stderr and result.stderr ~= "" then
-            log(`stderr: {result.stderr}`)
+        local cmd = buildCaptureCommand(mode)
+        log(`spawning: {cmd}`)
+
+        local ok = noctalia.runAsync(cmd, function(result)
+            local code = result.exitCode or "?"
+            log(`grabit exited with code {code}`)
+            if code ~= 0 and result.stderr and result.stderr ~= "" then
+                log(`stderr: {result.stderr}`)
+            end
+        end)
+
+        if not ok then
+            log("failed to spawn grabit")
+            noctalia.notifyError("Grabit", "Failed to launch grabit")
         end
     end)
-
-    if not ok then
-        log("failed to spawn grabit")
-        noctalia.notifyError("Grabit", "Failed to launch grabit")
-    end
 end
 
 -- ── Update loop ──────────────────────────────────────────────────
@@ -250,18 +277,22 @@ function onIpc(event, payload)
 
     if event == "capture" then
         local mode = "copy"
-        if type(payload) == "table" and payload.mode ~= nil then
-            mode = payload.mode
+        local delayMs = nil
+        if type(payload) == "table" then
+            if payload.mode ~= nil then
+                mode = payload.mode
+            end
+            delayMs = payload.delay_ms
         elseif type(payload) == "string" and payload ~= "" then
             mode = payload
         end
-        spawnCapture(mode)
+        spawnCapture(mode, delayMs)
 
     elseif event == "menu" then
         noctalia.togglePanel("snowballons/grabit:menu")
 
     elseif event == "record" then
-        startRecording()
+        startRecording(if type(payload) == "table" then payload.delay_ms else nil)
 
     elseif event == "stop" then
         stopRecording()
