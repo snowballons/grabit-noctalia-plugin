@@ -109,21 +109,21 @@ local function buildCaptureArgv(mode)
         table.insert(args, "-u")
     elseif mode == "save" then
         table.insert(args, "-o")
+    elseif mode == "default" then
+        -- No action flag: grabit resolves the action from its own
+        -- `default_action` config key. That keeps the settings panel, the
+        -- widget, and the shortcut on one authoritative value instead of a
+        -- second copy in the plugin settings.
     else
         -- default: copy to clipboard
         table.insert(args, "-c")
     end
 
-    -- Upload service only applies to upload mode; grabit rejects service
-    -- flags for any other action.
-    if mode == "upload" then
-        local service = cfg("upload_service")
-        if service ~= "" and service ~= nil then
-            -- Pass as a separate argv element; no shell quoting needed.
-            table.insert(args, "--" .. service)
-        end
-    end
-
+    -- No --<service> flag here: bare -u already uploads through grabit's own
+    -- `service` key, which is what the settings panel writes. Appending a
+    -- second, plugin-side uploader would make captures and recordings upload
+    -- to different services.
+    --
     -- Cursor visibility is the `capture.cursor` config key (written by the
     -- settings panel). grabit has no --no-cursor flag, so don't pass one.
     return args

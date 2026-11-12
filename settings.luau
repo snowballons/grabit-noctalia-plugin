@@ -18,6 +18,9 @@ local CONFIG_KEYS = {
     "recording.format",
     "recording.crf",
     "translate.target",
+    "default_action",
+    "service",
+    "capture.cursor",
 }
 
 local function indexOf(arr, value)
@@ -71,8 +74,10 @@ local function parseConfigInfo(out)
 end
 
 -- Only one `grabit set` runs at a time. Noctalia rejects runAsync spawns past a
--- small in-flight limit (8), so firing every key at once leaves the panel with
--- no headroom and any key past the limit silently reads back blank.
+-- small in-flight limit (8), and a rejected spawn looks like an empty value, so
+-- firing every key at once silently dropped the trailing ones (default_action,
+-- service, capture.cursor all read back blank). Serial keeps the panel correct
+-- regardless of how many keys it reads.
 local function readGrabitConfig(keys, onDone)
     local values = {}
     local index = 0
@@ -109,12 +114,10 @@ end
 local loadGeneration = 0
 
 function onOpen()
-    settings.defaultAction = noctalia.getConfig("default_action") or "copy"
-    settings.uploadService = noctalia.getConfig("upload_service") or ""
-    settings.showCursor = noctalia.getConfig("show_cursor")
-    if settings.showCursor == nil then settings.showCursor = true end
-
     -- grabit-side values; replaced by the real values once the reads land.
+    settings.defaultAction = "copy"
+    settings.uploadService = ""
+    settings.showCursor = true
     settings.alsoSave = false
     settings.format = "png"
     settings.filenamePreset = "date"
@@ -131,6 +134,9 @@ function onOpen()
 
     readGrabitConfig(CONFIG_KEYS, function(values)
         if generation ~= loadGeneration then return end
+        settings.defaultAction = nonEmpty(values["default_action"], "copy")
+        settings.uploadService = values["service"] or ""
+        settings.showCursor = values["capture.cursor"] ~= "false"
         settings.alsoSave = values["also_save"] == "true"
         settings.format = nonEmpty(values["format"], "png")
         if settings.format == "jpg" then settings.format = "jpeg" end
@@ -165,30 +171,37 @@ function renderSettings()
             fontSize = 12,
             color = "on_surface_variant",
         }),
-
         ui.separator({}),
 
-        -- Default action
+        -- Default action: grabit's own key, so the widget, shortcut, and the
+        -- command builder all resolve the same value instead of maintaining a
+        -- second copy in the plugin settings.
         ui.label({ text = "Default action", fontWeight = "bold" }),
         ui.select({
-            options = { "Copy to clipboard", "Save to file", "Upload" },
-            selectedIndex = indexOf({ "copy", "save", "upload" }, settings.defaultAction),
+            options = { "Copy to clipboard", "Save to file", "Upload", "Pin to desktop" },
+            selectedIndex = indexOf({ "copy", "save", "upload", "pin" }, settings.defaultAction),
             onChange = function(idx)
-                local values = { "copy", "save", "upload" }
+                local values = { "copy", "save", "upload", "pin" }
                 local newVal = values[idx + 1]
                 settings.defaultAction = newVal
                 grabitSet("default_action", newVal)
             end,
         }),
 
-        -- Upload service (shown when default is upload)
         ui.label({ text = "Upload service" }),
         ui.input({
             value = settings.uploadService or "",
             placeholder = "zipline, nest, or .sxcu uploader name",
             onChange = function(value)
-                settings.uploadService = value
-                grabitSet("service", value)
+                local trimmed = trim(value)
+                settings.uploadService = trimmed
+                -- grabit validates the value, and rejects an empty one, so
+                -- clearing the field must unset the key instead of writing "".
+                if trimmed == "" then
+                    grabitUnset("service")
+                else
+                    grabitSet("service", trimmed)
+                end
             end,
         }),
 
