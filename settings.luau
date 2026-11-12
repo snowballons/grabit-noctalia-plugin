@@ -70,26 +70,36 @@ local function parseConfigInfo(out)
     return current
 end
 
+-- Only one `grabit set` runs at a time. Noctalia rejects runAsync spawns past a
+-- small in-flight limit (8), so firing every key at once leaves the panel with
+-- no headroom and any key past the limit silently reads back blank.
 local function readGrabitConfig(keys, onDone)
-    local remaining = #keys
     local values = {}
-    if remaining == 0 then
+    local index = 0
+
+    local function next()
+        index = index + 1
+        local key = keys[index]
+        if key == nil then
+            onDone(values)
+            return
+        end
+
+        local ok = noctalia.runAsync({ "grabit", "set", key }, function(res)
+            values[key] = parseConfigInfo(res and res.stdout)
+            next()
+        end)
+        if not ok then
+            values[key] = ""
+            next()
+        end
+    end
+
+    if #keys == 0 then
         onDone(values)
         return
     end
-
-    local function settle(key, value)
-        values[key] = value
-        remaining = remaining - 1
-        if remaining == 0 then onDone(values) end
-    end
-
-    for _, key in ipairs(keys) do
-        local ok = noctalia.runAsync({ "grabit", "set", key }, function(res)
-            settle(key, parseConfigInfo(res and res.stdout))
-        end)
-        if not ok then settle(key, "") end
-    end
+    next()
 end
 
 -- ── State loading ────────────────────────────────────────────────
@@ -344,26 +354,31 @@ function renderSettings()
                 }
                 -- `grabit set <key> --reset` only works for keys.* keybinds.
                 -- `grabit unset <key>` removes the key and restores the default.
-                -- Wait for every unset before reading the values back; otherwise
-                -- the reload can race the unsets and show the old values.
-                local remaining = #keysToReset
-                local function settled()
-                    remaining = remaining - 1
-                    if remaining > 0 then return end
-                    noctalia.notify("Grabit", "Config keys reset to defaults")
-                    onOpen()
-                end
-                for _, key in ipairs(keysToReset) do
+                -- Run them one at a time: runAsync rejects spawns past a small
+                -- in-flight limit, so firing all of them at once would drop the
+                -- trailing keys and leave them unreset.
+                local index = 0
+                local function unsetNext()
+                    index = index + 1
+                    local key = keysToReset[index]
+                    if key == nil then
+                        noctalia.notify("Grabit", "Config keys reset to defaults")
+                        -- Wait for every unset before reading the values back;
+                        -- otherwise the reload races them and shows old values.
+                        onOpen()
+                        return
+                    end
                     local ok = noctalia.runAsync({ "grabit", "unset", key }, function(res)
                         if res.exitCode ~= 0 then
                             noctalia.notifyError(
                                 "Grabit", "Failed to reset " .. key .. ": " .. (res.stderr or "")
                             )
                         end
-                        settled()
+                        unsetNext()
                     end)
-                    if not ok then settled() end
+                    if not ok then unsetNext() end
                 end
+                unsetNext()
             end,
         }),
     }))
