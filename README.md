@@ -75,4 +75,5 @@ The `capture` payload is a mode name (`default`, `copy`, `save`, `upload`, `full
 
 - Processes spawned: `grabit` (captures, recording, pause, pins, OCR), `sleep` (capture delay), and `xdg-open` (config folder). The plugin makes no network requests itself; uploads are done by grabit only when the chosen action uploads.
 - Files written: the plugin reads grabit's recording pid file in `$XDG_RUNTIME_DIR` and writes grabit config keys through the `grabit` CLI. Screenshots, recordings, and grabit's own log are written by grabit.
+- The plugin only controls recordings it started. `grabit --record` toggles on the pid file, so starting a recording while one started elsewhere is running would stop that one instead; the service checks for a live `grabit --record` first and refuses, leaving the external recording alone.
 - The recording indicator is a click-through `recording` layer shown by the `indicator` service only while recording or paused. The bar widget and shortcut mirror the same state.

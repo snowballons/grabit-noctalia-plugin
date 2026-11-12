@@ -242,23 +242,49 @@ local function startRecording(delayMs)
     defer(delayMs, function()
         if not isAvailable or state ~= "idle" then return end
 
-        setState("pending")
-        pendingSince = os.clock()
-        ownedPid = nil -- will be populated by detectRecordingState once the lockfile appears
+        local function spawn()
+            if not isAvailable or state ~= "idle" then return end
 
-        local cmd = buildRecordCommand()
-        log("spawning: " .. table.concat(cmd, " "))
+            setState("pending")
+            pendingSince = os.clock()
+            ownedPid = nil -- will be populated by detectRecordingState once the lockfile appears
 
-        -- Detached form (no callback): the callback form has a default 5s
-        -- timeout and Noctalia kills the process group when it fires, which
-        -- cut recordings short. update() detects the process instead.
-        local ok = noctalia.runAsync(cmd)
+            local cmd = buildRecordCommand()
+            log("spawning: " .. table.concat(cmd, " "))
+
+            -- Detached form (no callback): the callback form has a default 5s
+            -- timeout and Noctalia kills the process group when it fires, which
+            -- cut recordings short. update() detects the process instead.
+            local ok = noctalia.runAsync(cmd)
+
+            if not ok then
+                log("failed to spawn grabit --record")
+                ownedPid = nil
+                setState("idle")
+                noctalia.notifyError("Grabit", "Failed to start recording")
+            end
+        end
+
+        -- grabit --record is a pid-file toggle: if a recording is already live
+        -- it stops that one instead of starting a new one. detectRecordingState
+        -- only runs while non-idle, so an externally started recording is
+        -- invisible here — and this is the one path that would toggle it off.
+        -- idle means ownedPid is nil, so any live --record is foreign.
+        local ok = noctalia.processMatches(function(anyRecording)
+            if anyRecording then
+                log("refusing to record: a grabit --record not started by this plugin is running")
+                noctalia.notifyError(
+                    "Grabit",
+                    "A recording started outside the plugin is running; not touching it"
+                )
+                return
+            end
+            spawn()
+        end, "grabit", "--record")
 
         if not ok then
-            log("failed to spawn grabit --record")
-            ownedPid = nil
-            setState("idle")
-            noctalia.notifyError("Grabit", "Failed to start recording")
+            log("processMatches unavailable; starting without the foreign-recording guard")
+            spawn()
         end
     end)
 end
